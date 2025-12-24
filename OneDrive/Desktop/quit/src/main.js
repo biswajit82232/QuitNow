@@ -7,6 +7,267 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Request notification permission
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    if (import.meta.env.DEV) {
+      console.log('This browser does not support notifications');
+    }
+    return false;
+  }
+  
+  if (Notification.permission === 'granted') {
+    notificationPermission = 'granted';
+    return true;
+  }
+  
+  if (Notification.permission !== 'denied') {
+    try {
+      const permission = await Notification.requestPermission();
+      notificationPermission = permission;
+      return permission === 'granted';
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Error requesting notification permission:', error);
+      }
+      return false;
+    }
+  }
+  
+  return false;
+}
+
+// Show a notification
+function showNotification(title, options = {}) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return;
+  }
+  
+  // Use service worker notification if available, otherwise use regular notification
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.ready.then((registration) => {
+      registration.showNotification(title, {
+        body: options.body || '',
+        icon: options.icon || '/android-launchericon-192-192.png',
+        badge: options.badge || '/android-launchericon-48-48.png',
+        vibrate: options.vibrate || [200, 100, 200],
+        tag: options.tag || 'quit-now-notification',
+        requireInteraction: options.requireInteraction || false,
+        data: options.data || {}
+      });
+    }).catch((error) => {
+      if (import.meta.env.DEV) {
+        console.error('Error showing service worker notification:', error);
+      }
+      // Fallback to regular notification
+      new Notification(title, options);
+    });
+  } else {
+    // Fallback to regular notification
+    try {
+      new Notification(title, options);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Error showing notification:', error);
+      }
+    }
+  }
+}
+
+// Load notified milestones and benefits from localStorage
+function loadNotifiedItems() {
+  try {
+    const stored = localStorage.getItem('notifiedMilestones');
+    if (stored) {
+      notifiedMilestones = new Set(JSON.parse(stored));
+    }
+    
+    const storedBenefits = localStorage.getItem('notifiedBenefits');
+    if (storedBenefits) {
+      notifiedBenefits = new Set(JSON.parse(storedBenefits));
+    }
+    
+    const storedDaily = localStorage.getItem('lastDailyNotification');
+    if (storedDaily) {
+      lastDailyNotification = new Date(storedDaily);
+    }
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Error loading notified items:', error);
+    }
+  }
+}
+
+// Save notified milestones and benefits to localStorage
+function saveNotifiedItems() {
+  try {
+    localStorage.setItem('notifiedMilestones', JSON.stringify(Array.from(notifiedMilestones)));
+    localStorage.setItem('notifiedBenefits', JSON.stringify(Array.from(notifiedBenefits)));
+    if (lastDailyNotification) {
+      localStorage.setItem('lastDailyNotification', lastDailyNotification.toISOString());
+    }
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Error saving notified items:', error);
+    }
+  }
+}
+
+// Check for milestone achievements and send notifications
+function checkMilestoneNotifications(quitDate) {
+  if (Notification.permission !== 'granted') return;
+  
+  const health = calculateHealthRegeneration(quitDate);
+  const milestones = [
+    { days: 0.014, name: 'Heart rate normalizes' },
+    { days: 0.5, name: 'Blood pressure drops' },
+    { days: 1, name: 'Oxygen in blood rises' },
+    { days: 7, name: 'Breathing easier' },
+    { days: 14, name: 'Circulation improves' },
+    { days: 30, name: 'Lung function improves' },
+    { days: 60, name: 'Better lung function' },
+    { days: 90, name: 'Sperm quality improves' },
+    { days: 180, name: 'Depression risk decreases' },
+    { days: 365, name: 'Heart disease risk drops' },
+    { days: 730, name: 'Stroke risk drops' },
+    { days: 1825, name: 'Chronic bronchitis risk drops' },
+    { days: 3650, name: 'Lung cancer risk drops' },
+    { days: 5475, name: 'Heart disease risk ≈ non-smoker' }
+  ];
+  
+  const now = new Date();
+  const nowUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds());
+  const quitUTC = Date.UTC(quitDate.getFullYear(), quitDate.getMonth(), quitDate.getDate(), quitDate.getHours(), quitDate.getMinutes(), quitDate.getSeconds());
+  const diff = nowUTC - quitUTC;
+  const days = diff / (1000 * 60 * 60 * 24);
+  
+  milestones.forEach((milestone) => {
+    const milestoneKey = `milestone-${milestone.days}`;
+    
+    // Check if milestone is reached and not yet notified
+    if (days >= milestone.days && !notifiedMilestones.has(milestoneKey)) {
+      notifiedMilestones.add(milestoneKey);
+      saveNotifiedItems();
+      
+      // Send notification
+      const daysText = milestone.days < 1 
+        ? `${Math.round(milestone.days * 24 * 60)} minutes`
+        : milestone.days === 1 
+        ? '1 day'
+        : milestone.days < 7
+        ? `${Math.round(milestone.days)} days`
+        : milestone.days < 30
+        ? `${Math.round(milestone.days / 7)} weeks`
+        : milestone.days < 365
+        ? `${Math.round(milestone.days / 30)} months`
+        : `${Math.round(milestone.days / 365)} years`;
+      
+      showNotification('Milestone Achieved!', {
+        body: `${milestone.name} - You've been smoke-free for ${daysText}!`,
+        tag: milestoneKey,
+        vibrate: [300, 200, 300]
+      });
+    }
+  });
+}
+
+// Check for health benefit achievements and send notifications
+function checkBenefitNotifications(quitDate) {
+  if (Notification.permission !== 'granted') return;
+  
+  const healthBenefits = calculateHealthBenefits(quitDate);
+  
+  healthBenefits.forEach((benefit) => {
+    const benefitKey = `benefit-${benefit.name}`;
+    
+    // Check if benefit is 100% complete and not yet notified
+    if (benefit.progress >= 100 && !notifiedBenefits.has(benefitKey)) {
+      notifiedBenefits.add(benefitKey);
+      saveNotifiedItems();
+      
+      // Send notification for ALL benefits when they reach 100%
+      showNotification('Health Benefit Achieved!', {
+        body: `${benefit.name} - ${benefit.details.substring(0, 80)}...`,
+        tag: benefitKey,
+        vibrate: [200, 100, 200]
+      });
+    }
+  });
+}
+
+// Send daily progress notification
+function checkDailyNotification(quitDate) {
+  if (Notification.permission !== 'granted') return;
+  
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Check if we already sent a notification today
+  if (lastDailyNotification) {
+    const lastNotificationDate = new Date(lastDailyNotification.getFullYear(), lastDailyNotification.getMonth(), lastDailyNotification.getDate());
+    if (lastNotificationDate.getTime() === today.getTime()) {
+      return; // Already notified today
+    }
+  }
+  
+  // Send notification at 9 AM (or if it's past 9 AM and we haven't notified today)
+  const notificationHour = 9;
+  if (now.getHours() >= notificationHour) {
+    const stats = calculateStats(quitDate);
+    const timeElapsed = calculateTimeElapsed(quitDate);
+    
+    // Format time
+    let timeText = '';
+    if (timeElapsed.days > 0) {
+      timeText = `${timeElapsed.days} day${timeElapsed.days !== 1 ? 's' : ''}`;
+    } else if (timeElapsed.hours > 0) {
+      timeText = `${timeElapsed.hours} hour${timeElapsed.hours !== 1 ? 's' : ''}`;
+    } else {
+      timeText = `${timeElapsed.minutes} minute${timeElapsed.minutes !== 1 ? 's' : ''}`;
+    }
+    
+    showNotification('Daily Progress Update', {
+      body: `You've been smoke-free for ${timeText}! Saved $${stats.moneySaved} and avoided ${stats.cigarettesAvoided} cigarettes. Keep going!`,
+      tag: 'daily-progress',
+      vibrate: [100, 50, 100]
+    });
+    
+    lastDailyNotification = now;
+    saveNotifiedItems();
+  }
+}
+
+// Start notification checking
+function startNotificationChecking(quitDate) {
+  if (!quitDate) return;
+  
+  // Clear existing interval
+  if (notificationCheckInterval) {
+    clearInterval(notificationCheckInterval);
+    notificationCheckInterval = null;
+  }
+  
+  // Check immediately
+  checkMilestoneNotifications(quitDate);
+  checkBenefitNotifications(quitDate);
+  checkDailyNotification(quitDate);
+  
+  // Check every 5 minutes for new milestones and benefits
+  notificationCheckInterval = setInterval(() => {
+    checkMilestoneNotifications(quitDate);
+    checkBenefitNotifications(quitDate);
+    checkDailyNotification(quitDate);
+  }, 5 * 60 * 1000); // 5 minutes
+}
+
+// Stop notification checking
+function stopNotificationChecking() {
+  if (notificationCheckInterval) {
+    clearInterval(notificationCheckInterval);
+    notificationCheckInterval = null;
+  }
+}
+
 // Register service worker for PWA (only in production or when not in dev mode)
 let serviceWorkerUpdateInterval = null;
 
@@ -79,6 +340,13 @@ if ('serviceWorker' in navigator) {
 const DEFAULT_CIGARETTES_PER_DAY = 20;
 const DEFAULT_COST_PER_PACK = 10;
 const CIGARETTES_PER_PACK = 20;
+
+// Notification system
+let notificationPermission = null;
+let notifiedMilestones = new Set();
+let notifiedBenefits = new Set();
+let lastDailyNotification = null;
+let notificationCheckInterval = null;
 
 // Motivational tips and messages
 const MOTIVATIONAL_TIPS = [
@@ -601,7 +869,7 @@ document.querySelector('#app').innerHTML = `
             </div>
           ` : `
             <div class="next-regeneration">
-              <div class="next-regeneration-label">🎉 All Milestones Achieved!</div>
+              <div class="next-regeneration-label">All Milestones Achieved!</div>
             </div>
           `}
           <div class="health-header">
@@ -703,7 +971,16 @@ let cachedHealth = null;
 // Start the timer
 function startTimer() {
   const quitDate = getQuitDate();
-  if (!quitDate) return;
+  if (!quitDate) {
+    stopNotificationChecking();
+    return;
+  }
+  
+  // Start notification checking if not already started
+  if (!notificationCheckInterval) {
+    loadNotifiedItems();
+    startNotificationChecking(quitDate);
+  }
   
   // Clear any existing interval to prevent memory leaks
   if (timerInterval) {
@@ -867,7 +1144,7 @@ function startTipRotation() {
 }
 
 // Start tracking function (called from button)
-window.startTracking = function() {
+window.startTracking = async function() {
   try {
     const nicknameEl = document.getElementById('nickname');
     const dateInputEl = document.getElementById('quitDate');
@@ -945,7 +1222,16 @@ window.startTracking = function() {
       timerInterval = null;
     }
     
+    // Request notification permission
+    await requestNotificationPermission();
+    
+    // Load notified items
+    loadNotifiedItems();
+    
     renderTracker();
+    
+    // Start notification checking
+    startNotificationChecking(quitDate);
   } catch (error) {
     if (import.meta.env.DEV) {
       console.error('Error starting tracking:', error);
@@ -1194,6 +1480,21 @@ window.confirmReset = function() {
         localStorage.removeItem('costPerPack');
         // Note: nickname is kept on reset
         
+        // Clear notification tracking
+        notifiedMilestones.clear();
+        notifiedBenefits.clear();
+        lastDailyNotification = null;
+        try {
+          localStorage.removeItem('notifiedMilestones');
+          localStorage.removeItem('notifiedBenefits');
+          localStorage.removeItem('lastDailyNotification');
+        } catch (e) {
+          // Ignore errors
+        }
+        
+        // Stop notification checking
+        stopNotificationChecking();
+        
         // Small delay before re-rendering to prevent jump
         requestAnimationFrame(() => {
           renderTracker();
@@ -1253,4 +1554,5 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Initialize
+loadNotifiedItems();
 renderTracker();
