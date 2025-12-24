@@ -115,7 +115,11 @@ function saveNotifiedItems() {
 
 // Check for milestone achievements and send notifications
 function checkMilestoneNotifications(quitDate) {
-  if (Notification.permission !== 'granted') return;
+  if (!quitDate || Notification.permission !== 'granted') return;
+  
+  // Don't send notifications during countdown mode
+  const timeElapsed = calculateTimeElapsed(quitDate);
+  if (timeElapsed.isCountdown) return;
   
   const health = calculateHealthRegeneration(quitDate);
   const milestones = [
@@ -173,7 +177,11 @@ function checkMilestoneNotifications(quitDate) {
 
 // Check for health benefit achievements and send notifications
 function checkBenefitNotifications(quitDate) {
-  if (Notification.permission !== 'granted') return;
+  if (!quitDate || Notification.permission !== 'granted') return;
+  
+  // Don't send notifications during countdown mode
+  const timeElapsed = calculateTimeElapsed(quitDate);
+  if (timeElapsed.isCountdown) return;
   
   const healthBenefits = calculateHealthBenefits(quitDate);
   
@@ -197,7 +205,11 @@ function checkBenefitNotifications(quitDate) {
 
 // Send daily progress notification
 function checkDailyNotification(quitDate) {
-  if (Notification.permission !== 'granted') return;
+  if (!quitDate || Notification.permission !== 'granted') return;
+  
+  // Don't send notifications during countdown mode
+  const timeElapsed = calculateTimeElapsed(quitDate);
+  if (timeElapsed.isCountdown) return;
   
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -251,13 +263,69 @@ function startNotificationChecking(quitDate) {
   checkMilestoneNotifications(quitDate);
   checkBenefitNotifications(quitDate);
   checkDailyNotification(quitDate);
+  checkWaterIntakeReminder();
   
   // Check every 5 minutes for new milestones and benefits
   notificationCheckInterval = setInterval(() => {
     checkMilestoneNotifications(quitDate);
     checkBenefitNotifications(quitDate);
     checkDailyNotification(quitDate);
+    checkWaterIntakeReminder();
   }, 5 * 60 * 1000); // 5 minutes
+}
+
+// Check water intake reminder
+function checkWaterIntakeReminder() {
+  if (Notification.permission !== 'granted') return;
+  
+  const intake = getTodayWaterIntake();
+  const goal = getWaterGoal();
+  const percentage = goal > 0 ? (intake / goal) * 100 : 0;
+  
+  // Get last reminder time
+  let lastReminder = null;
+  try {
+    const stored = localStorage.getItem('lastWaterReminder');
+    if (stored) {
+      lastReminder = new Date(stored);
+    }
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Error reading last water reminder:', error);
+    }
+  }
+  
+  const now = new Date();
+  const hoursSinceLastReminder = lastReminder ? (now - lastReminder) / (1000 * 60 * 60) : 24;
+  
+  // Remind every 2 hours if below 50% of goal, or every 3 hours if below 80%
+  if (percentage < 50 && hoursSinceLastReminder >= 2) {
+    showNotification('Water Reminder', {
+      body: `You've had ${(intake / 1000).toFixed(1)}L today. Stay hydrated! Your goal is ${(goal / 1000).toFixed(1)}L.`,
+      tag: 'water-reminder',
+      vibrate: [100, 50, 100]
+    });
+    try {
+      localStorage.setItem('lastWaterReminder', now.toISOString());
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Error saving water reminder:', error);
+      }
+    }
+  } else if (percentage < 80 && percentage >= 50 && hoursSinceLastReminder >= 3) {
+    showNotification('Water Reminder', {
+      body: `You're at ${Math.round(percentage)}% of your goal. Keep going!`,
+      tag: 'water-reminder',
+      vibrate: [100, 50, 100]
+    });
+    try {
+      localStorage.setItem('lastWaterReminder', now.toISOString());
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Error saving water reminder:', error);
+      }
+    }
+  }
 }
 
 // Stop notification checking
@@ -339,6 +407,7 @@ if ('serviceWorker' in navigator) {
 // Default settings (can be customized)
 const DEFAULT_CIGARETTES_PER_DAY = 20;
 const DEFAULT_COST_PER_PACK = 10;
+const DEFAULT_WATER_GOAL_ML = 2000; // 2 liters default
 const CIGARETTES_PER_PACK = 20;
 
 // Notification system
@@ -425,6 +494,81 @@ function setNickname(nickname) {
   }
 }
 
+// Get water intake goal from localStorage
+function getWaterGoal() {
+  try {
+    const stored = localStorage.getItem('waterGoal');
+    return stored ? parseInt(stored) : DEFAULT_WATER_GOAL_ML;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Error reading water goal from localStorage:', error);
+    }
+    return DEFAULT_WATER_GOAL_ML;
+  }
+}
+
+// Set water intake goal in localStorage
+function setWaterGoal(goal) {
+  try {
+    const goalNum = parseInt(goal);
+    if (goalNum >= 500 && goalNum <= 10000) {
+      localStorage.setItem('waterGoal', goalNum.toString());
+      return true;
+    }
+    return false;
+  } catch (error) {
+    if (error.name === 'QuotaExceededError') {
+      showErrorModal('Storage is full. Please clear some data or use a different browser.');
+    } else if (import.meta.env.DEV) {
+      console.error('Error saving water goal to localStorage:', error);
+    }
+    return false;
+  }
+}
+
+// Get today's water intake from localStorage
+function getTodayWaterIntake() {
+  try {
+    const today = new Date().toDateString();
+    const stored = localStorage.getItem('waterIntake');
+    if (stored) {
+      const data = JSON.parse(stored);
+      // Check if data is for today
+      if (data.date === today) {
+        return data.intake || 0;
+      }
+    }
+    return 0;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('Error reading water intake from localStorage:', error);
+    }
+    return 0;
+  }
+}
+
+// Add water intake for today
+function addWaterIntake(amount) {
+  try {
+    const today = new Date().toDateString();
+    const current = getTodayWaterIntake();
+    const newIntake = current + amount;
+    
+    localStorage.setItem('waterIntake', JSON.stringify({
+      date: today,
+      intake: newIntake
+    }));
+    return newIntake;
+  } catch (error) {
+    if (error.name === 'QuotaExceededError') {
+      showErrorModal('Storage is full. Please clear some data or use a different browser.');
+    } else if (import.meta.env.DEV) {
+      console.error('Error saving water intake to localStorage:', error);
+    }
+    return getTodayWaterIntake();
+  }
+}
+
 function setQuitDate(date) {
   try {
     if (!date || isNaN(date.getTime())) {
@@ -436,11 +580,7 @@ function setQuitDate(date) {
     if (date < minDate) {
       throw new Error('Date is too far in the past');
     }
-    // Validate date is not in the future
-    const now = new Date();
-    if (date > now) {
-      throw new Error('Date cannot be in the future');
-    }
+    // Allow future dates for countdown mode (preparing to quit)
     localStorage.setItem('quitDate', date.toISOString());
   } catch (error) {
     if (error.name === 'QuotaExceededError') {
@@ -451,22 +591,28 @@ function setQuitDate(date) {
   }
 }
 
-// Calculate time elapsed
+// Calculate time elapsed (or countdown if date is in future)
 function calculateTimeElapsed(quitDate) {
   const now = new Date();
-  const diff = now - quitDate;
+  const diff = quitDate - now; // Positive if future, negative if past
   
-  // If quit date is in the future or just happened, show zeros
-  if (diff <= 0) {
-    return { days: 0, hours: 0, minutes: 0, seconds: 0, totalMs: 0 };
+  // If quit date is in the future, return countdown
+  if (diff > 0) {
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    return { days, hours, minutes, seconds, totalMs: diff, isCountdown: true };
   }
   
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+  // If quit date is in the past, return elapsed time
+  const elapsedDiff = now - quitDate;
+  const days = Math.floor(elapsedDiff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((elapsedDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((elapsedDiff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((elapsedDiff % (1000 * 60)) / 1000);
   
-  return { days, hours, minutes, seconds, totalMs: diff };
+  return { days, hours, minutes, seconds, totalMs: elapsedDiff, isCountdown: false };
 }
 
 // Calculate statistics
@@ -755,7 +901,7 @@ function renderTracker() {
   
   if (!quitDate) {
     // Show setup form
-    document.querySelector('#app').innerHTML = `
+document.querySelector('#app').innerHTML = `
       <div class="home-container">
         <h1 class="main-title">Quit Now</h1>
         <div class="setup-form">
@@ -763,12 +909,12 @@ function renderTracker() {
           <div class="form-group">
             <label for="nickname">Nickname:</label>
             <input type="text" id="nickname" placeholder="Your name" maxlength="20">
-          </div>
+    </div>
           <div class="form-group">
             <label for="quitDate">Quit Date:</label>
             <input type="datetime-local" id="quitDate" required>
-            <small class="form-hint">Format: dd-mm-yyyy --:--</small>
-          </div>
+            <small class="form-hint">Format: dd-mm-yyyy --:-- (Future dates will show countdown)</small>
+  </div>
           <div class="form-group">
             <label for="cigarettesPerDay">Cigarettes per day:</label>
             <input type="number" id="cigarettesPerDay" value="${DEFAULT_CIGARETTES_PER_DAY}" min="1" required>
@@ -829,7 +975,7 @@ document.querySelector('#app').innerHTML = `
         <h1 class="main-title" id="mainTitle">${safeNickname ? `Hey ${safeNickname}!` : 'Quit Now'}</h1>
         <p class="rotating-tip" id="rotatingTip">${escapeHtml(MOTIVATIONAL_TIPS[0])}</p>
         <div class="quit-date-info">
-          <p class="since-label">Since</p>
+          <p class="since-label">${timeElapsed.isCountdown ? 'Quit Date' : 'Since'}</p>
           <div class="quit-date-container">
             <p class="quit-date">${safeQuitDateStr}</p>
                 <button class="edit-icon" id="resetBtn" aria-label="Reset tracker" title="Reset tracker">
@@ -844,7 +990,7 @@ document.querySelector('#app').innerHTML = `
         <div class="time-display">
           <div class="time-unit">
             <div class="time-value" id="days">${timeElapsed.days}</div>
-            <div class="time-label">Days</div>
+            <div class="time-label">${timeElapsed.isCountdown ? 'Days Until' : 'Days'}</div>
           </div>
           <div class="time-unit">
             <div class="time-value" id="hours">${String(timeElapsed.hours).padStart(2, '0')}</div>
@@ -861,7 +1007,12 @@ document.querySelector('#app').innerHTML = `
         </div>
         
         <div class="health-regeneration-section">
-          ${health.nextMilestone ? `
+          ${timeElapsed.isCountdown ? `
+            <div class="next-regeneration">
+              <div class="next-regeneration-label">Preparing to Quit</div>
+              <div class="next-regeneration-name" style="color: #FF6B35;">Your health journey will begin when you quit!</div>
+            </div>
+          ` : health.nextMilestone ? `
             <div class="next-regeneration">
               <div class="next-regeneration-label">Next Regeneration:</div>
               <div class="next-regeneration-name">${escapeHtml(health.nextMilestone.name)}</div>
@@ -893,6 +1044,34 @@ document.querySelector('#app').innerHTML = `
           <div class="stat-card">
             <div class="stat-value" id="daysQuit">${stats.daysQuit}</div>
             <div class="stat-label">Days Quit</div>
+          </div>
+        </div>
+        
+        <div class="water-intake-section">
+          <div class="water-intake-header">
+            <h3 class="water-intake-title">Water Intake</h3>
+            <button class="water-goal-edit-btn" id="waterGoalEditBtn" aria-label="Edit water goal" title="Edit goal">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="water-intake-card">
+            <div class="water-intake-main">
+              <div class="water-intake-info">
+                <div class="water-intake-amount" id="waterIntakeAmount">${(getTodayWaterIntake() / 1000).toFixed(1)}L</div>
+                <div class="water-intake-goal" id="waterIntakeGoal">/ ${(getWaterGoal() / 1000).toFixed(1)}L</div>
+              </div>
+              <div class="water-intake-progress-bar">
+                <div class="water-intake-progress-fill" id="waterIntakeProgressFill" style="width: ${Math.min(100, (getTodayWaterIntake() / getWaterGoal()) * 100)}%"></div>
+              </div>
+              <div class="water-intake-buttons">
+                <button class="water-add-btn" id="waterAdd250" data-amount="250" aria-label="Add 250ml">+250ml</button>
+                <button class="water-add-btn" id="waterAdd500" data-amount="500" aria-label="Add 500ml">+500ml</button>
+                <button class="water-add-btn" id="waterAdd750" data-amount="750" aria-label="Add 750ml">+750ml</button>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -959,7 +1138,135 @@ document.querySelector('#app').innerHTML = `
         }
       });
     });
+    
+    // Attach event listeners to water intake buttons
+    const waterAddButtons = document.querySelectorAll('.water-add-btn');
+    waterAddButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const amountStr = btn.getAttribute('data-amount');
+        const amount = parseInt(amountStr);
+        if (isNaN(amount) || amount <= 0) {
+          if (import.meta.env.DEV) {
+            console.error('Invalid water amount:', amountStr);
+          }
+          return;
+        }
+        const newIntake = addWaterIntake(amount);
+        updateWaterIntakeDisplay();
+        
+        // Check if goal reached
+        const goal = getWaterGoal();
+        if (newIntake >= goal && goal > 0) {
+          showNotification('Water Goal Achieved!', {
+            body: `Congratulations! You've reached your daily water intake goal of ${(goal / 1000).toFixed(1)}L!`,
+            tag: 'water-goal-achieved',
+            vibrate: [200, 100, 200]
+          });
+        }
+      });
+    });
+    
+    // Attach event listener to water goal edit button
+    const waterGoalEditBtn = document.getElementById('waterGoalEditBtn');
+    if (waterGoalEditBtn) {
+      waterGoalEditBtn.addEventListener('click', editWaterGoal);
+    }
   }
+}
+
+// Update water intake display
+function updateWaterIntakeDisplay() {
+  const intake = getTodayWaterIntake();
+  const goal = getWaterGoal();
+  const percentage = goal > 0 ? Math.min(100, (intake / goal) * 100) : 0;
+  
+  const amountEl = document.getElementById('waterIntakeAmount');
+  const goalEl = document.getElementById('waterIntakeGoal');
+  const progressFillEl = document.getElementById('waterIntakeProgressFill');
+  
+  if (amountEl) {
+    amountEl.textContent = `${(intake / 1000).toFixed(1)}L`;
+  }
+  if (goalEl) {
+    goalEl.textContent = `/ ${(goal / 1000).toFixed(1)}L`;
+  }
+  if (progressFillEl) {
+    progressFillEl.style.width = `${percentage}%`;
+  }
+}
+
+// Edit water goal
+function editWaterGoal() {
+  const currentGoal = getWaterGoal();
+  const goalInLiters = (currentGoal / 1000).toFixed(1);
+  
+  // Create custom modal for water goal input
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'error-modal-overlay';
+  modalOverlay.setAttribute('role', 'dialog');
+  modalOverlay.setAttribute('aria-modal', 'true');
+  modalOverlay.setAttribute('aria-labelledby', 'water-goal-modal-title');
+  
+  modalOverlay.innerHTML = `
+    <div class="error-modal">
+      <h3 id="water-goal-modal-title">Set Water Intake Goal</h3>
+      <p style="margin: 0.5rem 0; color: #666; font-size: 0.9em;">Recommended: 2-3L per day</p>
+      <input type="number" id="waterGoalInput" value="${goalInLiters}" min="0.5" max="10" step="0.1" style="width: 100%; padding: 0.5rem; margin: 1rem 0; border: 1px solid #E8E8E8; border-radius: 4px; font-size: 1em;" placeholder="Enter goal in liters">
+      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn-primary" id="waterGoalSaveBtn" style="flex: 1;">Save</button>
+        <button class="btn-secondary" id="waterGoalCancelBtn" style="flex: 1;">Cancel</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modalOverlay);
+  document.body.style.overflow = 'hidden';
+  
+  const input = document.getElementById('waterGoalInput');
+  const saveBtn = document.getElementById('waterGoalSaveBtn');
+  const cancelBtn = document.getElementById('waterGoalCancelBtn');
+  
+  input.focus();
+  input.select();
+  
+  const closeModal = () => {
+    document.body.removeChild(modalOverlay);
+    document.body.style.overflow = '';
+  };
+  
+  const saveGoal = () => {
+    const newGoalLiters = parseFloat(input.value);
+    if (isNaN(newGoalLiters) || newGoalLiters < 0.5 || newGoalLiters > 10) {
+      showErrorModal('Please enter a valid goal between 0.5L and 10L.');
+      return;
+    }
+    
+    const newGoalMl = Math.round(newGoalLiters * 1000);
+    if (setWaterGoal(newGoalMl)) {
+      updateWaterIntakeDisplay();
+      closeModal();
+    } else {
+      showErrorModal('Unable to save water goal. Please try again.');
+    }
+  };
+  
+  saveBtn.addEventListener('click', saveGoal);
+  cancelBtn.addEventListener('click', closeModal);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveGoal();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeModal();
+    }
+  });
+  
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) {
+      closeModal();
+    }
+  });
 }
 
 // Timer interval reference for cleanup
@@ -1000,10 +1307,26 @@ function startTimer() {
   const healthProgressFillEl = document.getElementById('healthProgressFill');
   const nextRegenerationTimeEl = document.getElementById('nextRegenerationTime');
   
+  // Track previous countdown state to detect transition
+  const initialTimeElapsed = calculateTimeElapsed(quitDate);
+  let wasCountdown = initialTimeElapsed.isCountdown;
+  
   function update() {
     try {
       const now = new Date();
       const timeElapsed = calculateTimeElapsed(quitDate);
+      
+      // Check if quit date has arrived (switched from countdown to tracking)
+      if (wasCountdown === true && timeElapsed.isCountdown === false) {
+        // Quit date has arrived, re-render to switch to tracking mode
+        wasCountdown = false;
+        renderTracker();
+        return;
+      }
+      
+      // Update countdown state
+      wasCountdown = timeElapsed.isCountdown;
+      
       const stats = calculateStats(quitDate);
       
       // Update timer (always needed)
@@ -1011,6 +1334,28 @@ function startTimer() {
       if (hoursEl) hoursEl.textContent = String(timeElapsed.hours).padStart(2, '0');
       if (minutesEl) minutesEl.textContent = String(timeElapsed.minutes).padStart(2, '0');
       if (secondsEl) secondsEl.textContent = String(timeElapsed.seconds).padStart(2, '0');
+      
+      // Update time label if in countdown mode
+      const timeLabels = document.querySelectorAll('.time-label');
+      if (timeLabels.length > 0 && timeElapsed.isCountdown) {
+        if (timeLabels[0].textContent !== 'Days Until') {
+          timeLabels[0].textContent = 'Days Until';
+        }
+      } else if (timeLabels.length > 0 && !timeElapsed.isCountdown) {
+        if (timeLabels[0].textContent !== 'Days') {
+          timeLabels[0].textContent = 'Days';
+        }
+      }
+      
+      // Update "Since" label
+      const sinceLabel = document.querySelector('.since-label');
+      if (sinceLabel) {
+        if (timeElapsed.isCountdown && sinceLabel.textContent !== 'Quit Date') {
+          sinceLabel.textContent = 'Quit Date';
+        } else if (!timeElapsed.isCountdown && sinceLabel.textContent !== 'Since') {
+          sinceLabel.textContent = 'Since';
+        }
+      }
       
       // Update stats (only if changed)
       if (cigarettesEl) {
@@ -1032,9 +1377,10 @@ function startTimer() {
         }
       }
       
-      // Update health regeneration (only every 5 seconds for performance)
-      const timeSinceLastHealthUpdate = now.getTime() - lastHealthUpdate;
-      if (timeSinceLastHealthUpdate >= 5000 || lastHealthUpdate === 0) {
+      // Update health regeneration (only every 5 seconds for performance, and only if not in countdown mode)
+      if (!timeElapsed.isCountdown) {
+        const timeSinceLastHealthUpdate = now.getTime() - lastHealthUpdate;
+        if (timeSinceLastHealthUpdate >= 5000 || lastHealthUpdate === 0) {
         lastHealthUpdate = now.getTime();
         
         const health = calculateHealthRegeneration(quitDate);
@@ -1070,29 +1416,30 @@ function startTimer() {
           }
         }
         
-        // Update health benefits (only every 5 seconds - they don't change every second)
-        const healthBenefits = calculateHealthBenefits(quitDate);
-        cachedHealthBenefits = healthBenefits;
-        
-        // Use requestAnimationFrame for smoother updates
-        requestAnimationFrame(() => {
-          healthBenefits.forEach((benefit, index) => {
-            const percentageEl = document.getElementById(`benefitPercentage${index}`);
-            const progressFillEl = document.getElementById(`benefitProgressFill${index}`);
-            if (percentageEl) {
-              const newProgress = `${benefit.progress}%`;
-              if (percentageEl.textContent !== newProgress) {
-                percentageEl.textContent = newProgress;
+          // Update health benefits (only every 5 seconds - they don't change every second)
+          const healthBenefits = calculateHealthBenefits(quitDate);
+          cachedHealthBenefits = healthBenefits;
+          
+          // Use requestAnimationFrame for smoother updates
+          requestAnimationFrame(() => {
+            healthBenefits.forEach((benefit, index) => {
+              const percentageEl = document.getElementById(`benefitPercentage${index}`);
+              const progressFillEl = document.getElementById(`benefitProgressFill${index}`);
+              if (percentageEl) {
+                const newProgress = `${benefit.progress}%`;
+                if (percentageEl.textContent !== newProgress) {
+                  percentageEl.textContent = newProgress;
+                }
               }
-            }
-            if (progressFillEl) {
-              const newWidth = `${benefit.progress}%`;
+              if (progressFillEl) {
+                const newWidth = `${benefit.progress}%`;
               if (progressFillEl.style.width !== newWidth) {
                 progressFillEl.style.width = newWidth;
               }
             }
           });
         });
+        }
       }
     } catch (error) {
       if (import.meta.env.DEV) {
@@ -1173,12 +1520,7 @@ window.startTracking = async function() {
       return;
     }
     
-    // Check if date is too far in the future
-    const now = new Date();
-    if (quitDate > now) {
-      showErrorModal('Quit date cannot be in the future. Please select a past or current date.');
-      return;
-    }
+    // Allow future dates for countdown mode (preparing to quit)
     
     // Check if date is too old (more than 50 years ago)
     const minDate = new Date();

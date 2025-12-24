@@ -16,25 +16,25 @@ const STATIC_ASSETS = [
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing version', SW_VERSION);
   // Force activation immediately
   self.skipWaiting();
   
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME)
       .then((cache) => {
-        console.log('[Service Worker] Caching static assets');
         return cache.addAll(STATIC_ASSETS.map(url => new Request(url, { cache: 'no-cache' })));
       })
       .catch((error) => {
-        console.error('[Service Worker] Cache install failed:', error);
+        // Silently fail in production
       })
   );
 });
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating version', SW_VERSION);
+  if (import.meta.env.DEV) {
+    console.log('[Service Worker] Activating version', SW_VERSION);
+  }
   event.waitUntil(
     Promise.all([
       // Delete all old caches
@@ -44,7 +44,9 @@ self.addEventListener('activate', (event) => {
             if (cacheName !== STATIC_CACHE_NAME && 
                 cacheName !== DYNAMIC_CACHE_NAME &&
                 cacheName !== CACHE_NAME) {
-              console.log('[Service Worker] Deleting old cache:', cacheName);
+              if (import.meta.env.DEV) {
+                console.log('[Service Worker] Deleting old cache:', cacheName);
+              }
               return caches.delete(cacheName);
             }
           })
@@ -131,12 +133,11 @@ self.addEventListener('fetch', (event) => {
 
 // Handle background sync (if needed in future)
 self.addEventListener('sync', (event) => {
-  console.log('[Service Worker] Background sync:', event.tag);
+  // Background sync handler
 });
 
 // Handle push notifications (if needed in future)
 self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Push notification received');
   const options = {
     body: event.data ? event.data.text() : 'You have a new update!',
     icon: '/android-launchericon-192-192.png',
@@ -153,7 +154,6 @@ self.addEventListener('push', (event) => {
 
 // Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Notification clicked');
   event.notification.close();
   
   event.waitUntil(

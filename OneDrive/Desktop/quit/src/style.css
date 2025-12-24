@@ -515,6 +515,135 @@ body {
   }
 }
 
+/* Water Intake Section */
+.water-intake-section {
+  width: 100%;
+  max-width: 700px;
+  margin: 1.5rem auto 0;
+  padding-top: 1rem;
+}
+
+.water-intake-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.water-intake-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #333333;
+  margin: 0;
+  text-align: center;
+  flex: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.water-goal-edit-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  color: #999999;
+  transition: color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.water-goal-edit-btn:hover {
+  color: #FF6B35;
+  background: rgba(255, 107, 53, 0.1);
+}
+
+.water-intake-card {
+  background: #FFFFFF;
+  border-radius: 6px;
+  padding: 0;
+  border: 1px solid #E8E8E8;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.water-intake-main {
+  padding: 1rem;
+}
+
+.water-intake-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  gap: 0.25rem;
+}
+
+.water-intake-amount {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: #FF6B35;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.water-intake-goal {
+  font-size: 1em;
+  font-weight: 500;
+  color: #999999;
+}
+
+.water-intake-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #F0F0F0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.water-intake-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4A90E2 0%, #5BA3F5 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.water-intake-buttons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.water-add-btn {
+  flex: 1;
+  padding: 0.6rem 0.5rem;
+  background: #FFFFFF;
+  border: 1px solid #E8E8E8;
+  border-radius: 4px;
+  color: #333333;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.water-add-btn:hover {
+  background: #FF6B35;
+  color: #FFFFFF;
+  border-color: #FF6B35;
+  transform: translateY(-1px);
+}
+
+.water-add-btn:active {
+  transform: translateY(0);
+}
+
 /* Health Benefits Section */
 .health-benefits-section {
   width: 100%;
@@ -1144,6 +1273,39 @@ body {
     font-size: 0.85em;
     font-weight: 500;
     letter-spacing: 0.02em;
+  }
+  
+  .water-intake-section {
+    margin: 0.75rem auto 0;
+    padding-top: 0.6rem;
+  }
+  
+  .water-intake-title {
+    font-size: 1.05em;
+    margin-bottom: 0.6rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  
+  .water-intake-main {
+    padding: 0.75rem;
+  }
+  
+  .water-intake-amount {
+    font-size: 1.3em;
+  }
+  
+  .water-intake-goal {
+    font-size: 0.9em;
+  }
+  
+  .water-intake-buttons {
+    gap: 0.4rem;
+  }
+  
+  .water-add-btn {
+    padding: 0.5rem 0.4rem;
+    font-size: 0.8em;
   }
   
   .health-benefits-section {
