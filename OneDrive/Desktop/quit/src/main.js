@@ -298,6 +298,11 @@ function checkWaterIntakeReminder() {
   const now = new Date();
   const hoursSinceLastReminder = lastReminder ? (now - lastReminder) / (1000 * 60 * 60) : 24;
   
+  // Don't remind if goal is already reached
+  if (percentage >= 100) {
+    return;
+  }
+  
   // Remind every 2 hours if below 50% of goal, or every 3 hours if below 80%
   if (percentage < 50 && hoursSinceLastReminder >= 2) {
     showNotification('Water Reminder', {
@@ -1049,7 +1054,10 @@ document.querySelector('#app').innerHTML = `
         
         <div class="water-intake-section">
           <div class="water-intake-header">
-            <h3 class="water-intake-title">Water Intake</h3>
+            <div style="flex: 1; text-align: center;">
+              <h3 class="water-intake-title">Water Intake</h3>
+              <p class="water-intake-subtitle">Flush the toxins out</p>
+            </div>
             <button class="water-goal-edit-btn" id="waterGoalEditBtn" aria-label="Edit water goal" title="Edit goal">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
